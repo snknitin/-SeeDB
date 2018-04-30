@@ -1,7 +1,7 @@
 import psycopg2 as ps
 import psycopg2.extras as e
 import os
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='Zero.kira1412'")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='ffdewg34'")
 
 
 # 0 - age : continuous.
