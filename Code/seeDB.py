@@ -1,8 +1,9 @@
 import psycopg2 as ps
 import psycopg2.extras as e
 import os
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='ffdewg34'")
-
+import csv
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='<insert_your_pwd>'")
+DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
 # 1 - workclass : Private, Self-emp-not-inc, Self-emp-inc, Federal-gov, Local-gov, State-gov, Without-pay, Never-worked.
@@ -22,16 +23,50 @@ con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='ffde
 
 
 
-def query1():
+def create_tables():
     """
-    Return the result of the query as a list of lists
+    Create 10 tables to load the data splits
     :return:
     """
-
     cur = con.cursor()
-    cur.execute("select * from census limit 5")
-    rows = cur.fetchall()
-    print(rows)
+    for i in range(10):
+        command="create table census_{} (age real, workclass text, fnlwgt real, education text, education_num real, marital_status text, occupation text, relationship text, race text, sex text, capital_gain real, capital_loss real, hours_per_week real, native_country text, economic_indicator text)".format(i+1)
+        cur.execute(command)
+    cur.close()
+    # commit the changes
+    con.commit()
+
+def insert_data():
+    """
+    Insert values into those tables
+    :return:
+    """
+    cur = con.cursor()
+    for i in range(1,11):
+        with open(os.path.join(DATA_PATH,"test_{}.csv".format(i)), 'r') as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip the header row.
+            for row in reader:
+                cur.execute("INSERT INTO census_{} VALUES (%s, %s, %s, %s,%s, %s, %s, %s,%s, %s, %s, %s,%s, %s, %s)".format(i),row)
+
+    cur.close()
+    # commit the changes
+    con.commit()
+
+
+def create_views():
+    """
+    Create 10 tables to load the data splits
+    :return:
+    """
+    cur = con.cursor()
+    for i in range(10):
+        command=""" create view married_{} as select * from census_{} where marital_status in (' Married-AF-spouse', ' Married-civ-spouse', ' Married-spouse-absent',' Separated');
+                    create view unmarried_{} as select * from census_{} where marital_status in (' Never-married', ' Widowed',' Divorced');""".format(i+1,i+1,i+1,i+1)
+        cur.execute(command)
+    cur.close()
+    # commit the changes
+    con.commit()
 
 
 def query2():
@@ -41,12 +76,20 @@ def query2():
     print(rows[0])
 
 
-def query3():
-    filename= os.path.join(os.path.dirname(os.getcwd()),"Data/testfile.csv")
+def query3(view):
+    filename= os.path.join(os.path.dirname(os.getcwd()),"Data/{}.csv".format(view))
     fhandle=open(filename,'w')
     cur = con.cursor()
-    cur.copy_to(fhandle,'census',sep=",")
+    cur.execute("select * from {} limit 5".format(view))
+    rows = cur.fetchall()
+    cur.copy_to(fhandle,rows,sep=",")
 
 if __name__=="__main__":
-    query1()
+    target_view="married"
+    reference_view="unmarried"
+    # Uncomment these to create tables/views and load data
+
+    # create_tables()
+    # insert_data()
+    # create_views()
 
