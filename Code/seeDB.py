@@ -2,7 +2,12 @@ import psycopg2 as ps
 import psycopg2.extras as e
 import os
 import csv
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='<insert_your_pwd>'")
+import numpy as np
+from sklearn.preprocessing import normalize
+import scipy as sc
+import itertools
+
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sdgshaege' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -20,6 +25,28 @@ DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 # 12 - hours-per-week : continuous.
 # 13 - native-country : United-States, Cambodia, England, Puerto-Rico, Canada, Germany, Outlying-US(Guam-USVI-etc), India, Japan, Greece, South, China, Cuba, Iran, Honduras, Philippines, Italy, Poland, Jamaica, Vietnam, Mexico, Portugal, Ireland, France, Dominican-Republic, Laos, Ecuador, Taiwan, Haiti, Columbia, Hungary, Guatemala, Nicaragua, Scotland, Thailand, Yugoslavia, El-Salvador, Trinadad&Tobago, Peru, Hong, Holand-Netherlands.
 # 14 - economic_indicator : >50K, <=50K
+
+function_list=["avg", "sum", "min", "max", "count"]
+dimensions=["workclass" , "education" , "marital_status" , "occupation" , "relationship" , "race" , "sex" , "native_country" , "economic_indicator"]
+measures=["age","fnlwgt","hours-per-week","capital-gain","capital-loss"]
+
+
+def normalize(rows):
+    y=np.asarray(rows)
+    x = normalize(y[:, [1]], axis=0)
+    return np.concatenate((y[:, [0]], x), axis=1)
+
+def compute_KL(p,q):
+    """
+    Function to compute the KL divergence between two arrays
+    :param p: First PDF
+    :param q: Second PDF
+    :return:
+    """
+    # This module automatically normalizes the arrays sent to it
+    # This will be our utility measure. We need not be concerned with equal lengths for p and q
+    # since in our specification we are grouping on married and unmarried which will have same number of groups
+    return sc.stats.entropy(p,q)
 
 
 
@@ -85,11 +112,16 @@ def query3(view):
     cur.copy_to(fhandle,rows,sep=",")
 
 if __name__=="__main__":
-    target_view="married"
-    reference_view="unmarried"
+
     # Uncomment these to create tables/views and load data
 
     # create_tables()
     # insert_data()
     # create_views()
+    query2()
+
+
+
+
+
 
