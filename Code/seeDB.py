@@ -7,8 +7,9 @@ from sklearn.preprocessing import normalize
 import scipy as sc
 import itertools
 import time
+import collections
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='dgsgdg' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fsfdgfad' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -28,7 +29,7 @@ DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 # 14 - economic_indicator : >50K, <=50K
 
 function_list=["avg", "sum", "min", "max", "count"]
-dimensions=["workclass" , "education" , "marital_status" , "occupation" , "relationship" , "race" , "sex" , "native_country" ]
+dimensions=["workclass" , "education" , "occupation" , "relationship" , "race" , "sex" , "native_country","economic_indicator" ]
 measures=["age","fnlwgt","hours-per-week","capital-gain","capital-loss"]
 
 
@@ -53,6 +54,18 @@ def compute_KL(p,q):
     # since in our specification we are grouping on married and unmarried which will have same number of groups
     return sc.stats.entropy(p,q)
 
+def uneven_kl_divergence(pk,qk):
+    """
+    In the event that the arrays aren't of same length
+    :param pk:
+    :param qk:
+    :return:
+    """
+    if len(pk)>len(qk):
+        pk = np.random.choice(pk,len(qk))
+    elif len(qk)>len(pk):
+        qk = np.random.choice(qk,len(pk))
+    return np.sum(pk * np.log(pk/qk))
 
 
 def create_tables():
@@ -101,8 +114,8 @@ def create_views():
     con.commit()
 
 
-def query2(command):
-    cur = con.cursor(cursor_factory=e.DictCursor)
+def query_tuples(command):
+    cur = con.cursor()
     cur.execute(command)
     rows = cur.fetchall()
     return np.asarray(rows)
@@ -125,17 +138,33 @@ def query_timer(command):
 
 class SeeDB(object):
     def __init__(self):
-        self.seen={}
+        self.seen=collections.defaultdict(dict)
         self.prune={}
+        self.phase_count=1
 
-    def share_opt(self):
+    def share_opt_phase(self):
         """
         Generate different combinations of function, dimension attribute and measurement attribute
+        and get the utilities in a particular phase or partition
         :return:
         """
         for (f,a,m) in itertools.product(function_list,dimensions,measures):
             if (f,a,m) not in self.prune:
-                pass
+                # Query on target db
+                command_target="select {},{}({}) from married_{} group  by {}".format(a,f,m,self.phase_count,a)
+                # Query on the refernce db
+                command_reference="select {},{}({}) from unmarried_{} group  by {}".format(a,f,m,self.phase_count,a)
+                target_tuples=query_tuples(command_target)
+                reference_tuples=query_tuples(command_reference)
+                if len(target_tuples) == len(reference_tuples):
+                    self.seen[(f,a,m)]=compute_KL(target_tuples,reference_tuples)
+                else:
+                    pk=0
+                    qk=0
+                    uneven_kl_divergence(target_tuples,reference_tuples)
+
+
+        self.phase_count+=1
 
     def prune_opt(self):
         """
@@ -158,9 +187,9 @@ if __name__=="__main__":
     # create_tables()
     # insert_data()
     # create_views()
-    query_timer("""SELECT avg(age), avg(fnlwgt), avg(capital_gain), avg(capital_gain), avg(hours_per_week) FROM married GROUP BY GROUPING SETS ((workclass), (education), (occupation), (relationship), (race), (sex), (native_country), (economic_indicator));
-SELECT avg(age), avg(fnlwgt), avg(capital_gain), avg(capital_gain), avg(hours_per_week) FROM unmarried GROUP BY GROUPING SETS ((workclass), (education), (occupation), (relationship), (race), (sex), (native_country), (economic_indicator));
-""")
+
+    s=SeeDB()
+    s.share_opt_phase()
 
 
 
