@@ -6,8 +6,9 @@ import numpy as np
 from sklearn.preprocessing import normalize
 import scipy as sc
 import itertools
+import time
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sdgshaege' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='dgsgdg' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -27,14 +28,18 @@ DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 # 14 - economic_indicator : >50K, <=50K
 
 function_list=["avg", "sum", "min", "max", "count"]
-dimensions=["workclass" , "education" , "marital_status" , "occupation" , "relationship" , "race" , "sex" , "native_country" , "economic_indicator"]
+dimensions=["workclass" , "education" , "marital_status" , "occupation" , "relationship" , "race" , "sex" , "native_country" ]
 measures=["age","fnlwgt","hours-per-week","capital-gain","capital-loss"]
 
 
 def normalize(rows):
-    y=np.asarray(rows)
-    x = normalize(y[:, [1]], axis=0)
-    return np.concatenate((y[:, [0]], x), axis=1)
+    """
+    Function to normalize the f(m) column
+    :param rows:
+    :return:
+    """
+    x = normalize(rows[:, [1]], axis=0)
+    return np.concatenate((rows[:, [0]], x), axis=1)
 
 def compute_KL(p,q):
     """
@@ -96,11 +101,11 @@ def create_views():
     con.commit()
 
 
-def query2():
+def query2(command):
     cur = con.cursor(cursor_factory=e.DictCursor)
-    cur.execute("select * from census limit 5")
+    cur.execute(command)
     rows = cur.fetchall()
-    print(rows[0])
+    return np.asarray(rows)
 
 
 def query3(view):
@@ -111,6 +116,41 @@ def query3(view):
     rows = cur.fetchall()
     cur.copy_to(fhandle,rows,sep=",")
 
+def query_timer(command):
+    t0 = time.time()
+    cur = con.cursor(cursor_factory=e.DictCursor)
+    cur.execute(command)
+    t1 = time.time()
+    print('Time taken by this query: %0.3f' % (t1 - t0))
+
+class SeeDB(object):
+    def __init__(self):
+        self.seen={}
+        self.prune={}
+
+    def share_opt(self):
+        """
+        Generate different combinations of function, dimension attribute and measurement attribute
+        :return:
+        """
+        for (f,a,m) in itertools.product(function_list,dimensions,measures):
+            if (f,a,m) not in self.prune:
+                pass
+
+    def prune_opt(self):
+        """
+        Prune specific triples based on KL divergence(utility)
+        :return:
+        """
+        pass
+
+
+
+
+
+
+
+
 if __name__=="__main__":
 
     # Uncomment these to create tables/views and load data
@@ -118,7 +158,9 @@ if __name__=="__main__":
     # create_tables()
     # insert_data()
     # create_views()
-    query2()
+    query_timer("""SELECT avg(age), avg(fnlwgt), avg(capital_gain), avg(capital_gain), avg(hours_per_week) FROM married GROUP BY GROUPING SETS ((workclass), (education), (occupation), (relationship), (race), (sex), (native_country), (economic_indicator));
+SELECT avg(age), avg(fnlwgt), avg(capital_gain), avg(capital_gain), avg(hours_per_week) FROM unmarried GROUP BY GROUPING SETS ((workclass), (education), (occupation), (relationship), (race), (sex), (native_country), (economic_indicator));
+""")
 
 
 
