@@ -8,10 +8,11 @@ import scipy as sc
 import itertools
 import time
 import collections
+import math
 from functools import reduce
 
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fdssdf' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sgsdgd' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -129,10 +130,15 @@ def query_timer(command):
 
 
 class SeeDB(object):
-    def __init__(self):
-        self.seen=collections.defaultdict(dict)
-        self.prune={}
+    def __init__(self,k):
+        self.seen = collections.defaultdict(float)
+        self.prune=[]
         self.phase_count=1
+        self.top=k
+        self.delta=0.05
+        self.mu = 0
+        self.triple_count = 0
+
 
     def share_opt_phase(self):
         """
@@ -140,20 +146,31 @@ class SeeDB(object):
         and get the utilities in a particular phase or partition
         :return:
         """
-        for (f,a) in itertools.product(function_list,dimensions):
-            if (f,a) not in self.prune:
-                f_m = ",".join([f + "(" + x + ")" for x in measures])
+
+        print("Phase %d :" %(self.phase_count))
+
+        t0=time.time()
+        for (f,a,m) in itertools.product(function_list,dimensions,measures):
+            if (f,a,m) not in self.prune:
+                #f_m = ",".join([f + "(" + x + ")" for x in measures])
 
                 # Query on target db and the refernce db
-                command_target="select {},{} from married_{} group  by {}".format(a,f_m,self.phase_count,a)
-                command_reference="select {},{} from unmarried_{} group  by {}".format(a,f_m,self.phase_count,a)
+                command_target="select {},{}({}) from married_{} group  by {}".format(a,f,m,self.phase_count,a)
+                command_reference="select {},{}({}) from unmarried_{} group  by {}".format(a,f,m,self.phase_count,a)
                 target_tuples=query_tuples(command_target)
                 reference_tuples=query_tuples(command_reference)
-                for i in range(len(measures)):
-                    self.seen[(f,a,measures[i])]=KL(target_tuples[:,i+1],reference_tuples[:,i+1])
-
+                # running average of KLD for each iteration
+                self.seen[(f, a, m)]=self.seen[(f, a, m)]*(1-1/self.phase_count) +KL(target_tuples[:, 1], reference_tuples[:,1])/self.phase_count
+                # for i in range(len(measures)):
+                #     self.seen[(f,a,measures[i])]=KL(target_tuples[:,i+1],reference_tuples[:,i+1])
+                self.triple_count+=1
+        print("Computed %d triples" %(self.triple_count))
+        t1 = time.time()
+        print('Time taken by this phase: %0.3f' % (t1 - t0))
+        #print(self.seen)
 
         self.phase_count += 1
+
 
 
         # for f in function_list:
@@ -172,7 +189,19 @@ class SeeDB(object):
         Prune specific triples based on KL divergence(utility)
         :return:
         """
-        pass
+        while self.phase_count<=10:
+            self.share_opt_phase()
+            self.mu = sum(self.seen.values()) / len(self.seen)
+            m=self.phase_count
+            # Get the minimum of the top 5 values for this iteration
+            min_threshold=min(sorted(self.seen.items(), key=lambda x:-x[1])[:5])[1]
+            # Hoeffding Serfling Inequality
+            epsilon=math.sqrt((0.5/m)*(1-((m-1)/10))*(2*math.log(math.log(m))+math.log((math.pi**2)/(3*self.delta))))
+            # Pruning the triples
+            for k,v in self.seen.items():
+                if v+epsilon< min_threshold-epsilon:
+                    self.prune.append(k)
+
 
 
 if __name__=="__main__":
@@ -183,8 +212,8 @@ if __name__=="__main__":
     # insert_data()
     # create_views()
 
-    s=SeeDB()
-    s.share_opt_phase()
+    s=SeeDB(5)
+    s.prune_opt()
 
 
 
