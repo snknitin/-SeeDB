@@ -8,8 +8,10 @@ import scipy as sc
 import itertools
 import time
 import collections
+from functools import reduce
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fsfdgfad' ")
+
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fdssdf' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -30,42 +32,29 @@ DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 function_list=["avg", "sum", "min", "max", "count"]
 dimensions=["workclass" , "education" , "occupation" , "relationship" , "race" , "sex" , "native_country","economic_indicator" ]
-measures=["age","fnlwgt","hours-per-week","capital-gain","capital-loss"]
+measures=["age","fnlwgt","hours_per_week","capital_gain","capital_loss"]
 
 
-def normalize(rows):
+def KL(rows1,rows2):
     """
-    Function to normalize the f(m) column
+    Function to normalize the f(m) column and compute the KL divergence between two arrays
     :param rows:
     :return:
     """
-    x = normalize(rows[:, [1]], axis=0)
-    return np.concatenate((rows[:, [0]], x), axis=1)
-
-def compute_KL(p,q):
-    """
-    Function to compute the KL divergence between two arrays
-    :param p: First PDF
-    :param q: Second PDF
-    :return:
-    """
-    # This module automatically normalizes the arrays sent to it
-    # This will be our utility measure. We need not be concerned with equal lengths for p and q
-    # since in our specification we are grouping on married and unmarried which will have same number of groups
-    return sc.stats.entropy(p,q)
-
-def uneven_kl_divergence(pk,qk):
-    """
-    In the event that the arrays aren't of same length
-    :param pk:
-    :param qk:
-    :return:
-    """
-    if len(pk)>len(qk):
-        pk = np.random.choice(pk,len(qk))
-    elif len(qk)>len(pk):
-        qk = np.random.choice(qk,len(pk))
-    return np.sum(pk * np.log(pk/qk))
+    p = [(x,0.00008)[x==0.0]  for x in rows1.astype(float).reshape(1,-1)[0]]
+    q = [(x,0.00008)[x==0.0]  for x in rows2.astype(float).reshape(1,-1)[0]]
+    # This will be our utility measure.
+    if len(p)==len(q):
+        # This module automatically normalizes the arrays sent to it
+        return sc.stats.entropy(p,q)
+    else:
+        # since in our specification we are grouping on married and unmarried in partitions
+        # which might not have same number of groups
+        if len(p) > len(q):
+            p = np.random.choice(p, len(q))
+        elif len(q) > len(p):
+            q = np.random.choice(q, len(p))
+        return np.sum(p * np.log(p / q))
 
 
 def create_tables():
@@ -136,6 +125,9 @@ def query_timer(command):
     t1 = time.time()
     print('Time taken by this query: %0.3f' % (t1 - t0))
 
+
+
+
 class SeeDB(object):
     def __init__(self):
         self.seen=collections.defaultdict(dict)
@@ -148,23 +140,32 @@ class SeeDB(object):
         and get the utilities in a particular phase or partition
         :return:
         """
-        for (f,a,m) in itertools.product(function_list,dimensions,measures):
-            if (f,a,m) not in self.prune:
-                # Query on target db
-                command_target="select {},{}({}) from married_{} group  by {}".format(a,f,m,self.phase_count,a)
-                # Query on the refernce db
-                command_reference="select {},{}({}) from unmarried_{} group  by {}".format(a,f,m,self.phase_count,a)
+        for (f,a) in itertools.product(function_list,dimensions):
+            if (f,a) not in self.prune:
+                f_m = ",".join([f + "(" + x + ")" for x in measures])
+
+                # Query on target db and the refernce db
+                command_target="select {},{} from married_{} group  by {}".format(a,f_m,self.phase_count,a)
+                command_reference="select {},{} from unmarried_{} group  by {}".format(a,f_m,self.phase_count,a)
                 target_tuples=query_tuples(command_target)
                 reference_tuples=query_tuples(command_reference)
-                if len(target_tuples) == len(reference_tuples):
-                    self.seen[(f,a,m)]=compute_KL(target_tuples,reference_tuples)
-                else:
-                    pk=0
-                    qk=0
-                    uneven_kl_divergence(target_tuples,reference_tuples)
+                for i in range(len(measures)):
+                    self.seen[(f,a,measures[i])]=KL(target_tuples[:,i+1],reference_tuples[:,i+1])
 
 
-        self.phase_count+=1
+        self.phase_count += 1
+
+
+        # for f in function_list:
+        #
+        #     f_m=",".join([f + "(" + x + ")" for x in measures])
+        #     a=reduce(lambda x, y: x + ", " + y, dimensions)
+        #     m = ",".join(["(" + x + ")" for x in dimensions])
+        #     command_target = "select {},{} from married_{} group  by grouping sets({});".format(a,f_m,self.phase_count,m)
+        #     command_reference ="select {},{} from unmarried_{} group  by grouping sets({});".format(a,f_m,self.phase_count,m)
+        #     target_tuples = query_tuples(command_target)
+        #     reference_tuples=query_tuples(command_reference)
+
 
     def prune_opt(self):
         """
@@ -172,12 +173,6 @@ class SeeDB(object):
         :return:
         """
         pass
-
-
-
-
-
-
 
 
 if __name__=="__main__":
