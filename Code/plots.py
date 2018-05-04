@@ -50,7 +50,7 @@ def images(target_rows,ref_rows,fam,num):
     plt.xlabel(a)
     plt.ylabel('{}({})'.format(f,m))
     plt.title('{} by {} for married and unmarried.'.format(m,a))
-    plt.xticks(index + bar_width, target_data.keys())
+    plt.xticks(index + bar_width, target_data.keys(),rotation=45,horizontalalignment="right")
     plt.legend()
 
     plt.tight_layout()
