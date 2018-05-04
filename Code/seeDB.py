@@ -12,7 +12,7 @@ import math
 from functools import reduce
 
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sgsdgd' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fdhdf' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -42,8 +42,8 @@ def KL(rows1,rows2):
     :param rows:
     :return:
     """
-    p = [(x,0.00008)[x==0.0]  for x in rows1.astype(float).reshape(1,-1)[0]]
-    q = [(x,0.00008)[x==0.0]  for x in rows2.astype(float).reshape(1,-1)[0]]
+    p = [(x,0.00008)[x==0.0] for x in rows1.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
+    q = [(x,0.00008)[x==0.0] for x in rows2.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
     # This will be our utility measure.
     if len(p)==len(q):
         # This module automatically normalizes the arrays sent to it
@@ -194,7 +194,7 @@ class SeeDB(object):
             self.mu = sum(self.seen.values()) / len(self.seen)
             m=self.phase_count
             # Get the minimum of the top 5 values for this iteration
-            min_threshold=min(sorted(self.seen.items(), key=lambda x:-x[1])[:5])[1]
+            min_threshold=min(sorted(self.seen.items(), key=lambda x:-x[1])[:self.top])[1]
             # Hoeffding Serfling Inequality
             epsilon=math.sqrt((0.5/m)*(1-((m-1)/10))*(2*math.log(math.log(m))+math.log((math.pi**2)/(3*self.delta))))
             # Pruning the triples
