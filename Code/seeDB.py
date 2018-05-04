@@ -4,7 +4,7 @@ import os
 import csv
 import numpy as np
 from sklearn.preprocessing import normalize
-import scipy as sc
+from scipy import stats
 import itertools
 import time
 import collections
@@ -12,7 +12,7 @@ import math
 from functools import reduce
 
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='fdhdf' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sdgdsa' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -36,18 +36,49 @@ dimensions=["workclass" , "education" , "occupation" , "relationship" , "race" ,
 measures=["age","fnlwgt","hours_per_week","capital_gain","capital_loss"]
 
 
+def modified_KL_forequal(rows1,rows2):
+    """
+    The input will be a, f(m) in married, f(m) in unmarried
+    The value that isn't present is discarded
+    :param rows:
+    :return:
+    """
+    x=dict([tuple(_) for _ in rows1.tolist()])
+    y=dict([tuple(_) for _ in rows2.tolist()])
+
+    # Map the corresponding values present in both the views and add 8e-5 or 1.0 if value is zero
+    z = [(float(x[id]) , float(y[id]) ) for id in set(x) & set(y)]
+    p,q=zip(*z)
+    # Convert to numpy and normalize
+    pk=np.asarray(list(p))
+    qk = np.asarray(list(q))
+    pk = 1.0 * pk / np.sum(pk, axis=0)
+    qk = 1.0 * qk / np.sum(qk, axis=0)
+    # Compute KLD and remove infs
+    res=pk*np.log(pk/qk)
+    res[np.isneginf(res)] = 0.0
+    res[np.isposinf(res)] = 0.0
+
+    # Since we made it equal we can just remove nans, make them 0 and sum to get KLD
+    return np.sum(np.nan_to_num(res))
+
+
 def KL(rows1,rows2):
     """
     Function to normalize the f(m) column and compute the KL divergence between two arrays
     :param rows:
     :return:
     """
-    p = [(x,0.00008)[x==0.0] for x in rows1.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
+    # p = [(x,0.00008)[x==0.0] for x in rows1.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
+    # q = [(x,0.00008)[x==0.0] for x in rows2.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
+
+    p = [(x, 0.00008)[x == 0.0] for x in rows1.astype(float) / rows1.astype(float).sum(axis=0, keepdims=1)]
     q = [(x,0.00008)[x==0.0] for x in rows2.astype(float)/rows1.astype(float).sum(axis=0,keepdims=1)]
+
     # This will be our utility measure.
     if len(p)==len(q):
         # This module automatically normalizes the arrays sent to it
-        return sc.stats.entropy(p,q)
+        return stats.entropy(p,q)
     else:
         # since in our specification we are grouping on married and unmarried in partitions
         # which might not have same number of groups
@@ -136,8 +167,8 @@ class SeeDB(object):
         self.phase_count=1
         self.top=k
         self.delta=0.05
-        self.mu = 0
         self.triple_count = 0
+
 
 
     def share_opt_phase(self):
@@ -153,6 +184,7 @@ class SeeDB(object):
         for (f,a,m) in itertools.product(function_list,dimensions,measures):
             if (f,a,m) not in self.prune:
                 #f_m = ",".join([f + "(" + x + ")" for x in measures])
+                #f,a,m=("avg","education","capital_gain")
 
                 # Query on target db and the refernce db
                 command_target="select {},{}({}) from married_{} group  by {}".format(a,f,m,self.phase_count,a)
@@ -160,7 +192,8 @@ class SeeDB(object):
                 target_tuples=query_tuples(command_target)
                 reference_tuples=query_tuples(command_reference)
                 # running average of KLD for each iteration
-                self.seen[(f, a, m)]=self.seen[(f, a, m)]*(1-1/self.phase_count) +KL(target_tuples[:, 1], reference_tuples[:,1])/self.phase_count
+                self.seen[(f, a, m)]=self.seen[(f, a, m)]*(1-1/self.phase_count)+ modified_KL_forequal(target_tuples,reference_tuples)/self.phase_count
+
                 # for i in range(len(measures)):
                 #     self.seen[(f,a,measures[i])]=KL(target_tuples[:,i+1],reference_tuples[:,i+1])
                 self.triple_count+=1
@@ -190,17 +223,23 @@ class SeeDB(object):
         :return:
         """
         while self.phase_count<=10:
+            utilities=[]
             self.share_opt_phase()
             self.mu = sum(self.seen.values()) / len(self.seen)
             m=self.phase_count
             # Get the minimum of the top 5 values for this iteration
-            min_threshold=min(sorted(self.seen.items(), key=lambda x:-x[1])[:self.top])[1]
+            min_threshold=min([_[1] for _ in sorted(self.seen.items(), key=lambda x:-x[1])[:self.top]])
             # Hoeffding Serfling Inequality
             epsilon=math.sqrt((0.5/m)*(1-((m-1)/10))*(2*math.log(math.log(m))+math.log((math.pi**2)/(3*self.delta))))
             # Pruning the triples
             for k,v in self.seen.items():
                 if v+epsilon< min_threshold-epsilon:
                     self.prune.append(k)
+                else:
+                    utilities.append((v,k))
+        return print(sorted(utilities)[::-1][:self.top])
+
+
 
 
 
