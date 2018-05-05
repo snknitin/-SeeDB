@@ -10,9 +10,10 @@ import time
 import collections
 import math
 from functools import reduce
+import plots as p
 
 
-con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='sdgdsa' ")
+con = ps.connect("dbname='seeDB' user='postgres' host='localhost' password='Zero.kira1412' ")
 DATA_PATH=os.path.join(os.path.dirname(os.getcwd()),"Data/splits/")
 
 # 0 - age : continuous.
@@ -46,8 +47,18 @@ def modified_KL_forequal(rows1,rows2):
     x=dict([tuple(_) for _ in rows1.tolist()])
     y=dict([tuple(_) for _ in rows2.tolist()])
 
+    if len(y)>len(x):
+        d=y
+    else:
+        d=x
+    x = collections.defaultdict(lambda: np.finfo(float).eps, x)
+    y = collections.defaultdict(lambda: np.finfo(float).eps, y)
+
     # Map the corresponding values present in both the views and add 8e-5 or 1.0 if value is zero
     z = [(float(x[id]) , float(y[id]) ) for id in set(x) & set(y)]
+
+    #z = [(float(x[id]), float(y[id])) for id in set(d)]
+
     p,q=zip(*z)
     # Convert to numpy and normalize
     pk=np.asarray(list(p))
@@ -140,6 +151,19 @@ def query_tuples(command):
     cur.execute(command)
     rows = cur.fetchall()
     return np.asarray(rows)
+
+
+def query_plotter(utilities):
+    cur = con.cursor()
+    for num,(kld,fam) in enumerate(utilities):
+        f,a,m=fam
+        command_target = "select {},{}({}) from married group  by {}".format(a, f, m, a)
+        command_reference = "select {},{}({}) from unmarried group  by {}".format(a, f, m, a)
+        target_tuples = query_tuples(command_target)
+        reference_tuples = query_tuples(command_reference)
+        p.images(target_tuples,reference_tuples,fam,num)
+
+
 
 
 def query3(view):
@@ -237,8 +261,7 @@ class SeeDB(object):
                     self.prune.append(k)
                 else:
                     utilities.append((v,k))
-        return print(sorted(utilities)[::-1][:self.top])
-
+        return sorted(utilities)[::-1][:self.top]
 
 
 
@@ -252,7 +275,9 @@ if __name__=="__main__":
     # create_views()
 
     s=SeeDB(5)
-    s.prune_opt()
+    plot_utils=s.prune_opt()
+    query_plotter(plot_utils)
+
 
 
 
